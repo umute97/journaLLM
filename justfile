@@ -22,11 +22,11 @@ logs service="":
 
 # Open psql inside the database container
 psql:
-    docker compose exec db psql -U "${POSTGRES_USER:-journallm}" -d "${POSTGRES_DB:-journallm}"
+    docker compose exec db psql -U "${POSTGRES_USER:-kritzellm}" -d "${POSTGRES_DB:-kritzellm}"
 
 # Check the database is up and speaks pgvector
 db-check:
-    @docker compose exec -T db psql -U "${POSTGRES_USER:-journallm}" -d "${POSTGRES_DB:-journallm}" -v ON_ERROR_STOP=1 -tA \
+    @docker compose exec -T db psql -U "${POSTGRES_USER:-kritzellm}" -d "${POSTGRES_DB:-kritzellm}" -v ON_ERROR_STOP=1 -tA \
         -c "SELECT 'postgres ' || current_setting('server_version') || ', pgvector ' || default_version FROM pg_available_extensions WHERE name = 'vector';"
 
 # Delete the local database volume (asks first)

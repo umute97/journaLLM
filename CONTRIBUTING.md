@@ -54,7 +54,7 @@ and is automated with [release-please](https://github.com/googleapis/release-ple
 1. Every `feat`/`fix`/`perf`/... merged to `main` updates an open **release PR**
    (`chore(main): release X.Y.Z`) with the version bump and `CHANGELOG.md`.
 2. Merging the release PR tags `vX.Y.Z`, creates the GitHub Release, publishes the Docker images to
-   `ghcr.io/umute97/journallm-{api,web}` (amd64 + arm64, with provenance attestations) and attaches
+   `ghcr.io/umute97/kritzellm-{api,web}` (amd64 + arm64, with provenance attestations) and attaches
    `api/openapi.yaml` to the release.
 
 Release PRs are opened by `GITHUB_TOKEN`, which doesn't trigger CI. They only touch the changelog
