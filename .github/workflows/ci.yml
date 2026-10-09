@@ -49,6 +49,8 @@ jobs:
               - '**/Dockerfile'
               - '**/.dockerignore'
               - 'docker-compose*.yml'
+              - 'justfile'
+              - '.env.example'
             workflows:
               - '.github/**'
 
@@ -75,13 +77,41 @@ jobs:
           # Branch protection is enforced by the ruleset; this hook is for local commits only.
           SKIP: no-commit-to-branch
 
+  compose:
+    name: Local stack
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - name: Validate compose file
+        run: docker compose config --quiet
+      - name: Start the stack
+        run: uvx --from rust-just just up
+      - name: Check Postgres + pgvector
+        run: uvx --from rust-just just db-check
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   # Component jobs (api-contract, backend, web, cli, docker-build) are added here as
   # each component lands. See "Adding a new component" in CONTRIBUTING.md.
 
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, repo-hygiene]
+    needs: [changes, repo-hygiene, compose]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
