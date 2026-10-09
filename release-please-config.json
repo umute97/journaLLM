@@ -17,7 +17,7 @@
   ],
   "packages": {
     ".": {
-      "package-name": "journallm",
+      "package-name": "kritzellm",
       "extra-files": []
     }
   }
