@@ -7,7 +7,7 @@ Snap photos of your pages, and kritzeLLM reads the handwriting, remembers *where
 and lets you ask questions. Every answer comes with sources that point to the exact page and spot 💖
 
 > Very much a work in progress. Everything runs locally with docker compose; only page images and text
-> are sent to the OpenAI API.
+> are sent to the OpenAI API. Maybe I'll switch that up in the future so you can use self-hosted LLMs.
 
 ## Quickstart
 
