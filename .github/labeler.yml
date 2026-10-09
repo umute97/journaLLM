@@ -20,6 +20,9 @@
           - "**/Dockerfile"
           - "**/.dockerignore"
           - "docker-compose*.yml"
+          - "justfile"
+          - ".editorconfig"
+          - ".env.example"
           - "scripts/**"
           - ".pre-commit-config.yaml"
 
