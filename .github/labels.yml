@@ -1,0 +1,83 @@
+# Source of truth for repository labels, synced by .github/workflows/labels-sync.yml.
+# Labels not listed here are deleted on sync.
+
+# Type: set automatically from the Conventional Commit PR title
+- name: "type:feat"
+  color: "1d76db"
+  description: New feature
+  aliases: ["enhancement"]
+- name: "type:fix"
+  color: "d73a4a"
+  description: Bug fix
+  aliases: ["bug"]
+- name: "type:perf"
+  color: "5319e7"
+  description: Performance improvement
+- name: "type:refactor"
+  color: "c5def5"
+  description: Code change that neither fixes a bug nor adds a feature
+- name: "type:docs"
+  color: "0075ca"
+  description: Documentation only
+  aliases: ["documentation"]
+- name: "type:test"
+  color: "bfd4f2"
+  description: Tests only
+- name: "type:build"
+  color: "fef2c0"
+  description: Build system or packaging
+- name: "type:ci"
+  color: "fef2c0"
+  description: CI/CD configuration
+- name: "type:chore"
+  color: "ededed"
+  description: Maintenance
+- name: "type:revert"
+  color: "ededed"
+  description: Reverts a previous change
+- name: "breaking"
+  color: "b60205"
+  description: Breaking change (bumps the minor version while < 1.0)
+
+# Area: set automatically from changed paths (.github/labeler.yml)
+- name: "area:api"
+  color: "0e8a16"
+  description: OpenAPI contract
+- name: "area:backend"
+  color: "0e8a16"
+  description: Python backend
+- name: "area:web"
+  color: "0e8a16"
+  description: Vue web app
+- name: "area:cli"
+  color: "0e8a16"
+  description: Command-line client
+- name: "area:infra"
+  color: "0e8a16"
+  description: Docker, compose, scripts
+- name: "area:ci"
+  color: "0e8a16"
+  description: GitHub workflows and repo automation
+- name: "area:docs"
+  color: "0e8a16"
+  description: Documentation
+
+# Status / misc
+- name: "status:blocked"
+  color: "e99695"
+  description: Waiting on something else
+- name: "status:needs-review"
+  color: "fbca04"
+  description: Needs a closer review before moving on
+- name: "deps"
+  color: "0366d6"
+  description: Dependency update
+  aliases: ["dependencies"]
+
+# Managed by release-please
+- name: "autorelease: pending"
+  color: "ededed"
+  description: Release PR not yet released
+- name: "autorelease: tagged"
+  color: "ededed"
+  description: Release PR has been tagged
