@@ -1,0 +1,25 @@
+name: Task
+description: A planned unit of work (roughly one PR)
+labels: []
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What this delivers and why.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What's included (endpoints, modules, views, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Observable acceptance criteria.
+    validations:
+      required: true

@@ -1,0 +1,76 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Validate Conventional Commit title
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+          scopes: |
+            api
+            backend
+            web
+            cli
+            infra
+            docs
+            deps
+            release
+            main
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" must start with a lowercase letter.
+
+      - name: Apply type labels
+        # Fork and Dependabot PRs get a read-only token; Dependabot sets its own labels.
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const match = /^(\w+)(?:\([^)]*\))?(!)?:/.exec(pr.title);
+            if (!match) return;
+            const [, type, bang] = match;
+            const breaking = Boolean(bang) || /BREAKING[ -]CHANGE:/.test(pr.body ?? '');
+
+            const wanted = new Set([`type:${type}`]);
+            if (breaking) wanted.add('breaking');
+
+            const current = pr.labels.map((l) => l.name);
+            const managed = (name) => name.startsWith('type:') || name === 'breaking';
+            const issue = { owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number };
+
+            for (const name of current.filter((n) => managed(n) && !wanted.has(n))) {
+              await github.rest.issues.removeLabel({ ...issue, name });
+            }
+            const toAdd = [...wanted].filter((n) => !current.includes(n));
+            if (toAdd.length) {
+              await github.rest.issues.addLabels({ ...issue, labels: toAdd });
+            }

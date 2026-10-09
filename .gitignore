@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# JournaLLM local data: never commit real journal pages, scans or exports
+/data/
+/scans/
+/exports/
+*.heic
+*.HEIC
+.env.*
+!.env.example

@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+      cli: ${{ steps.filter.outputs.cli }}
+      docker: ${{ steps.filter.outputs.docker }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+            backend:
+              - 'backend/**'
+              - 'api/openapi.yaml'
+            web:
+              - 'web/**'
+              - 'api/openapi.yaml'
+            cli:
+              - 'cli/**'
+              - 'api/openapi.yaml'
+            docker:
+              - '**/Dockerfile'
+              - '**/.dockerignore'
+              - 'docker-compose*.yml'
+            workflows:
+              - '.github/**'
+
+  repo-hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run pre-commit
+        run: uvx pre-commit run --all-files --show-diff-on-failure --color always
+        env:
+          # Branch protection is enforced by the ruleset; this hook is for local commits only.
+          SKIP: no-commit-to-branch
+
+  # Component jobs (api-contract, backend, web, cli, docker-build) are added here as
+  # each component lands. See "Adding a new component" in CONTRIBUTING.md.
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, repo-hygiene]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::A required job ended with: $result"; exit 1 ;;
+            esac
+          done

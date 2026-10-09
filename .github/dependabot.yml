@@ -1,0 +1,18 @@
+version: 2
+
+# Add an entry per ecosystem as components land (uv: /backend, /cli; npm: /web; docker).
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["deps", "type:chore", "area:ci"]
+    commit-message:
+      prefix: chore
+      include: scope
