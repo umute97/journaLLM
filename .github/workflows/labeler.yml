@@ -19,4 +19,6 @@ jobs:
     steps:
       - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
         with:
-          sync-labels: true
+          # Only add labels: `ci` and `documentation` are shared with the PR-title labels,
+          # so removing non-matching ones would fight with that workflow.
+          sync-labels: false

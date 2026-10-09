@@ -12,7 +12,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-    labels: ["deps", "type:chore", "area:ci"]
+    labels: ["deps", "chore", "ci"]
     commit-message:
       prefix: chore
       include: scope

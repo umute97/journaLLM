@@ -1,74 +1,84 @@
 # Source of truth for repository labels, synced by .github/workflows/labels-sync.yml.
-# Labels not listed here are deleted on sync.
+# Labels not listed here are deleted on sync. `aliases` rename existing labels in place.
 
-# Type: set automatically from the Conventional Commit PR title
-- name: "type:feat"
+# Kind of change: set automatically from the Conventional Commit PR title
+- name: "feature"
   color: "1d76db"
   description: New feature
-  aliases: ["enhancement"]
-- name: "type:fix"
+  aliases: ["type:feat", "enhancement"]
+- name: "bug"
   color: "d73a4a"
   description: Bug fix
-  aliases: ["bug"]
-- name: "type:perf"
+  aliases: ["type:fix"]
+- name: "performance"
   color: "5319e7"
   description: Performance improvement
-- name: "type:refactor"
+  aliases: ["type:perf"]
+- name: "refactor"
   color: "c5def5"
   description: Code change that neither fixes a bug nor adds a feature
-- name: "type:docs"
-  color: "0075ca"
-  description: Documentation only
-  aliases: ["documentation"]
-- name: "type:test"
+  aliases: ["type:refactor"]
+- name: "test"
   color: "bfd4f2"
-  description: Tests only
-- name: "type:build"
+  description: Tests
+  aliases: ["type:test"]
+- name: "build"
   color: "fef2c0"
   description: Build system or packaging
-- name: "type:ci"
-  color: "fef2c0"
-  description: CI/CD configuration
-- name: "type:chore"
+  aliases: ["type:build"]
+- name: "chore"
   color: "ededed"
   description: Maintenance
-- name: "type:revert"
+  aliases: ["type:chore"]
+- name: "revert"
   color: "ededed"
   description: Reverts a previous change
+  aliases: ["type:revert"]
 - name: "breaking"
   color: "b60205"
   description: Breaking change (bumps the minor version while < 1.0)
 
+# Shared: set from the PR title and/or the changed paths
+- name: "documentation"
+  color: "0075ca"
+  description: Documentation
+  aliases: ["type:docs", "area:docs"]
+- name: "ci"
+  color: "fef2c0"
+  description: GitHub workflows and repo automation
+  aliases: ["type:ci", "area:ci"]
+
 # Area: set automatically from changed paths (.github/labeler.yml)
-- name: "area:api"
+- name: "api"
   color: "0e8a16"
   description: OpenAPI contract
-- name: "area:backend"
+  aliases: ["area:api"]
+- name: "backend"
   color: "0e8a16"
   description: Python backend
-- name: "area:web"
+  aliases: ["area:backend"]
+- name: "web"
   color: "0e8a16"
   description: Vue web app
-- name: "area:cli"
+  aliases: ["area:web"]
+- name: "cli"
   color: "0e8a16"
   description: Command-line client
-- name: "area:infra"
+  aliases: ["area:cli"]
+- name: "infra"
   color: "0e8a16"
   description: Docker, compose, scripts
-- name: "area:ci"
-  color: "0e8a16"
-  description: GitHub workflows and repo automation
-- name: "area:docs"
-  color: "0e8a16"
-  description: Documentation
+  aliases: ["area:infra"]
 
 # Status / misc
-- name: "status:blocked"
+- name: "blocked"
   color: "e99695"
   description: Waiting on something else
-- name: "status:needs-review"
+  aliases: ["status:blocked"]
+- name: "needs-review"
   color: "fbca04"
   description: Needs a closer review before moving on
+  aliases: ["status:needs-review"]
 - name: "deps"
   color: "0366d6"
   description: Dependency update
