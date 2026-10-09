@@ -54,17 +54,33 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
+            const TYPE_LABELS = {
+              feat: 'feature',
+              fix: 'bug',
+              perf: 'performance',
+              refactor: 'refactor',
+              docs: 'documentation',
+              test: 'test',
+              build: 'build',
+              ci: 'ci',
+              chore: 'chore',
+              revert: 'revert',
+            };
+            // Also set by the path labeler, so never removed here.
+            const SHARED = new Set(['documentation', 'ci']);
+
             const pr = context.payload.pull_request;
             const match = /^(\w+)(?:\([^)]*\))?(!)?:/.exec(pr.title);
-            if (!match) return;
+            if (!match || !(match[1] in TYPE_LABELS)) return;
             const [, type, bang] = match;
             const breaking = Boolean(bang) || /BREAKING[ -]CHANGE:/.test(pr.body ?? '');
 
-            const wanted = new Set([`type:${type}`]);
+            const wanted = new Set([TYPE_LABELS[type]]);
             if (breaking) wanted.add('breaking');
 
             const current = pr.labels.map((l) => l.name);
-            const managed = (name) => name.startsWith('type:') || name === 'breaking';
+            const managedNames = new Set([...Object.values(TYPE_LABELS), 'breaking']);
+            const managed = (name) => managedNames.has(name) && !SHARED.has(name);
             const issue = { owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number };
 
             for (const name of current.filter((n) => managed(n) && !wanted.has(n))) {

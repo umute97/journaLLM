@@ -40,9 +40,11 @@ Images and PDFs are rejected by a pre-commit hook unless they live under a `test
 
 Labels are defined in [`.github/labels.yml`](.github/labels.yml) and mostly applied automatically:
 
-- `type:*` and `breaking` come from the PR title.
-- `area:*` comes from the changed paths ([`.github/labeler.yml`](.github/labeler.yml)).
-- `status:blocked` and `status:needs-review` are set by hand.
+- **Kind** (`feature`, `bug`, `performance`, `refactor`, `documentation`, `test`, `build`, `ci`,
+  `chore`, `revert`, plus `breaking`) comes from the PR title.
+- **Area** (`api`, `backend`, `web`, `cli`, `infra`, `ci`, `documentation`) comes from the changed paths
+  ([`.github/labeler.yml`](.github/labeler.yml)).
+- `blocked` and `needs-review` are set by hand; `deps` marks Dependabot PRs.
 
 ## Releases
 

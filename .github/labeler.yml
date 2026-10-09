@@ -1,20 +1,20 @@
-"area:api":
+"api":
   - changed-files:
       - any-glob-to-any-file: ["api/**"]
 
-"area:backend":
+"backend":
   - changed-files:
       - any-glob-to-any-file: ["backend/**"]
 
-"area:web":
+"web":
   - changed-files:
       - any-glob-to-any-file: ["web/**"]
 
-"area:cli":
+"cli":
   - changed-files:
       - any-glob-to-any-file: ["cli/**"]
 
-"area:infra":
+"infra":
   - changed-files:
       - any-glob-to-any-file:
           - "**/Dockerfile"
@@ -23,13 +23,13 @@
           - "scripts/**"
           - ".pre-commit-config.yaml"
 
-"area:ci":
+"ci":
   - changed-files:
       - any-glob-to-any-file:
           - ".github/**"
           - "release-please-config.json"
           - ".release-please-manifest.json"
 
-"area:docs":
+"documentation":
   - changed-files:
       - any-glob-to-any-file: ["**/*.md"]
