@@ -97,7 +97,7 @@ jobs:
         run: docker compose config --quiet
       - name: Start the stack
         run: uvx --from rust-just just up
-      - name: Check Postgres + pgvector
+      - name: Check Postgres, pgvector and the migrated tables
         run: uvx --from rust-just just db-check
       - name: Check the API
         run: uvx --from rust-just just api-check
@@ -144,6 +144,20 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg18-trixie
+        env:
+          POSTGRES_USER: kritzellm
+          POSTGRES_PASSWORD: kritzellm
+          POSTGRES_DB: kritzellm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kritzellm -d kritzellm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -161,8 +175,11 @@ jobs:
         run: uv run ruff format --check .
       - name: Typecheck
         run: uv run pyright
-      - name: Test (incl. "is api/openapi.json up to date?")
+      - name: Test (incl. "is api/openapi.json up to date?" and "do migrations match the models?")
         run: uv run pytest
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://kritzellm:kritzellm@localhost:5432/kritzellm_test
+          KRITZELLM_REQUIRE_DB: "1"
 
   backend-next-python:
     name: Backend (Python 3.15, allowed to fail)

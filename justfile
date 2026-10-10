@@ -27,7 +27,16 @@ psql:
 # Check the database is up and speaks pgvector
 db-check:
     @docker compose exec -T db psql -U "${POSTGRES_USER:-kritzellm}" -d "${POSTGRES_DB:-kritzellm}" -v ON_ERROR_STOP=1 -tA \
-        -c "SELECT 'postgres ' || current_setting('server_version') || ', pgvector ' || default_version FROM pg_available_extensions WHERE name = 'vector';"
+        -c "SELECT 'postgres ' || current_setting('server_version') || ', pgvector ' || default_version FROM pg_available_extensions WHERE name = 'vector';" \
+        -c "SELECT 'tables: ' || coalesce(string_agg(tablename, ', ' ORDER BY tablename), 'none (run just db-migrate)') FROM pg_tables WHERE schemaname = 'public';"
+
+# Apply database migrations (the compose stack does this on `just up`)
+db-migrate:
+    uv run --project backend alembic -c backend/alembic.ini upgrade head
+
+# Generate a migration from model changes, e.g. `just db-revision "add page notes"`
+db-revision message:
+    uv run --project backend alembic -c backend/alembic.ini revision --autogenerate -m "{{ message }}"
 
 # Check the running API answers on /health and /docs
 api-check:
@@ -55,9 +64,9 @@ backend-lint:
 backend-typecheck:
     cd backend && uv run pyright
 
-# Run the backend tests
+# Run the backend tests (DB tests use a throwaway `kritzellm_test` database in the compose Postgres)
 backend-test:
-    cd backend && uv run pytest
+    cd backend && TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-kritzellm}:${POSTGRES_PASSWORD:-kritzellm}@localhost:${POSTGRES_PORT:-5432}/kritzellm_test}" uv run pytest
 
 # Run the API locally with auto-reload, against the compose database (`just up db`)
 backend-dev:

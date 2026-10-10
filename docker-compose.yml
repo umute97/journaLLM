@@ -21,12 +21,27 @@ services:
       retries: 10
       start_period: 10s
 
+  # Brings the schema up to date, then exits. api waits for it.
+  migrate:
+    build: backend
+    image: kritzellm-api:local
+    command: ["python", "-m", "kritzellm.db.migrate"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kritzellm}:${POSTGRES_PASSWORD:-kritzellm}@db:5432/${POSTGRES_DB:-kritzellm}
+
   api:
     build: backend
+    image: kritzellm-api:local
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kritzellm}:${POSTGRES_PASSWORD:-kritzellm}@db:5432/${POSTGRES_DB:-kritzellm}
       API_TOKEN: ${API_TOKEN:-}
