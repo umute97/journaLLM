@@ -25,8 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Add python / javascript-typescript once backend, cli and web exist.
-        language: [actions]
+        # Add javascript-typescript once the web app exists.
+        language: [actions, python]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

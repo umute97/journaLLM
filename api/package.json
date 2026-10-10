@@ -1,0 +1,19 @@
+{
+  "name": "kritzellm-api-tools",
+  "private": true,
+  "description": "Tooling for the kritzeLLM OpenAPI contract: lint, mock server, docs preview",
+  "type": "module",
+  "scripts": {
+    "lint": "redocly lint openapi.json",
+    "mock": "prism mock --dynamic --json-schema-faker-fillProperties false openapi.json --port 4010",
+    "docs": "scalar document serve openapi.json --watch --port 4011"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.55.0",
+    "@scalar/cli": "2.8.0",
+    "@stoplight/prism-cli": "5.16.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -134,7 +134,7 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           assets=()
-          [ -f api/openapi.yaml ] && assets+=(api/openapi.yaml)
+          [ -f api/openapi.json ] && assets+=(api/openapi.json)
           if [ "${#assets[@]}" -gt 0 ]; then
             gh release upload "$TAG" "${assets[@]}" --clobber
           else

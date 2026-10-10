@@ -1,0 +1,49 @@
+extends:
+  - recommended-strict
+
+rules:
+  # Not an open-source license decision to make in the spec (yet).
+  info-license: off
+  info-license-strict: off
+
+  # Errors are RFC 9457 problem details
+  operation-4xx-problem-details-rfc7807: error
+
+  operation-summary: error
+  operation-description: error
+  operation-operationId: error
+  operation-tag-defined: error
+  tag-description: error
+  parameter-description: error
+
+  rule/operation-id-camel-case:
+    subject:
+      type: Operation
+      property: operationId
+    assertions:
+      casing: camelCase
+    message: operationId must be camelCase.
+    severity: error
+
+  rule/property-names-camel-case:
+    subject:
+      type: SchemaProperties
+    assertions:
+      casing: camelCase
+    message: Property names must be camelCase.
+    severity: error
+
+  rule/query-params-camel-case:
+    subject:
+      type: Parameter
+      property: name
+    where:
+      - subject:
+          type: Parameter
+          property: in
+        assertions:
+          enum: [query, path]
+    assertions:
+      casing: camelCase
+    message: Query and path parameter names must be camelCase.
+    severity: error

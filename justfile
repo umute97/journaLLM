@@ -37,19 +37,37 @@ db-reset:
 # --- Quality ---------------------------------------------------------------------
 
 # Run every check (grows as components land)
-check:
+check: backend-lint backend-test api-lint
     pre-commit run --all-files
 
-# --- API contract (coming soon) --------------------------------------------------
+# --- Backend ---------------------------------------------------------------------
+
+# Lint and format-check the backend
+backend-lint:
+    cd backend && uv run ruff check . && uv run ruff format --check .
+
+# Run the backend tests
+backend-test:
+    cd backend && uv run pytest
+
+# --- API contract ----------------------------------------------------------------
+
+# Regenerate api/openapi.json from the backend code
+api-export:
+    cd backend && uv run python scripts/export_openapi.py
+
+# Install the API contract tooling (Redocly, Prism, Scalar)
+api-install:
+    npm --prefix api ci
 
 # Lint the OpenAPI spec
 api-lint:
-    @echo "Not yet: arrives with the OpenAPI contract."
+    npm --prefix api run lint
 
-# Serve a mock API from the spec
+# Serve a mock API (random but valid data) on http://localhost:4010
 api-mock:
-    @echo "Not yet: arrives with the OpenAPI contract."
+    npm --prefix api run mock
 
-# Preview the API docs
+# Preview the API docs on http://localhost:4011
 api-docs:
-    @echo "Not yet: arrives with the OpenAPI contract."
+    npm --prefix api run docs

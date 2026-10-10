@@ -1,0 +1,9 @@
+# Deliberate exceptions to the lint rules in redocly.yaml. Keep each one explained.
+openapi.json:
+  operation-4xx-response:
+    # The health check takes no input and never needs auth, so it has no 4xx responses.
+    - '#/paths/~1health/get/responses'
+  no-unused-components:
+    # The shape of each SSE in the chat stream. OpenAPI 3.1 can't attach a schema
+    # to individual SSE, so it's referenced via `x-event-schema` and used for codegen.
+    - '#/components/schemas/ChatStreamEvent'

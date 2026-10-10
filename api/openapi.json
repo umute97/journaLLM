@@ -1,0 +1,4891 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "kritzeLLM API",
+    "summary": "Search and chat with a handwritten journal.",
+    "description": "Upload photos of handwritten journal pages, review their transcriptions, search them, and chat with\nan agent that cites the exact page and spot. 🖍️\n\n## Conventions\n\n- **Base path** `/api/v1`. JSON bodies use `camelCase`.\n- **Timestamps** are RFC 3339 (`2026-10-10T09:30:00Z`); journal dates are `YYYY-MM-DD`.\n- **IDs** are [TypeIDs](https://github.com/jetify-com/typeid): a type prefix plus a base32-encoded\n  UUIDv7, e.g. `pg_01k7c9a3b5d7e9f1g3h5j7k9m1`. Prefixes: `jrn` journal, `pg` page, `blk` block,\n  `cnv` conversation, `msg` message, `job` job.\n- **Errors** are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n  `400` means the request couldn't be parsed; `422` means a value is invalid (including malformed\n  IDs) and lists each problem in `errors`. A well-formed ID that doesn't exist is a `404`.\n- **Lists** use cursor pagination: pass `limit` and the previous response's `nextCursor` as\n  `cursor`. `nextCursor` is `null` on the last page.\n- **Long-running work** (transcribing, re-indexing, exports) answers `202 Accepted` with a `Job`\n  and a `Location` header. Poll the job until it finishes.\n- **Auth**: when the server has an `API_TOKEN` configured, every request except `GET /health`\n  needs `Authorization: Bearer <token>`.\n- **Locations on a page** are normalized to the page image: `0,0` is the top-left corner and `1,1`\n  the bottom-right, so they work for any image size.\n",
+    "version": "0.0.0"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Relative to wherever the app runs."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Check service health",
+        "description": "Reports whether the service and its database are up, plus the version and configured models.\n\nNever requires auth. `status` is `degraded` when a dependency is unhealthy.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/journals": {
+      "get": {
+        "tags": [
+          "journals"
+        ],
+        "summary": "List journals",
+        "description": "Lists all journals, newest first.",
+        "operationId": "listJournals",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return.",
+              "default": 25,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `nextCursor` from the previous page. Omit for the first page.",
+              "title": "Cursor"
+            },
+            "description": "The `nextCursor` from the previous page. Omit for the first page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "journals"
+        ],
+        "summary": "Create a journal",
+        "description": "Creates an empty journal to upload pages into.",
+        "operationId": "createJournal",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Journal"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "URL of the new journal.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri-reference"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journals/{journalId}": {
+      "get": {
+        "tags": [
+          "journals"
+        ],
+        "summary": "Get a journal",
+        "description": "Returns a single journal.",
+        "operationId": "getJournal",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The journal's ID.",
+              "title": "Journalid"
+            },
+            "description": "The journal's ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Journal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "journals"
+        ],
+        "summary": "Update a journal",
+        "description": "Renames a journal or changes its description. Only the given fields change.",
+        "operationId": "updateJournal",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The journal's ID.",
+              "title": "Journalid"
+            },
+            "description": "The journal's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Journal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "journals"
+        ],
+        "summary": "Delete a journal",
+        "description": "Deletes a journal with all of its pages, images, blocks and search index entries.\n\nThis can't be undone.",
+        "operationId": "deleteJournal",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The journal's ID.",
+              "title": "Journalid"
+            },
+            "description": "The journal's ID."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journals/{journalId}/pages": {
+      "post": {
+        "tags": [
+          "journals",
+          "pages"
+        ],
+        "summary": "Upload pages",
+        "description": "Uploads page photos or scans into a journal.\n\nEach new page gets an `ingestPage` job that normalizes the image, transcribes it and indexes it.\n\nUploads are idempotent per file: a file whose SHA-256 already exists in this journal returns the\nexisting page with `duplicate: true` and no new job. Sending the same `Idempotency-Key` again\nreplays the original response.",
+        "operationId": "uploadPages",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The journal's ID.",
+              "title": "Journalid"
+            },
+            "description": "The journal's ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any unique string (e.g. a UUID). Retries with the same key return the first response.",
+              "title": "Idempotency-Key"
+            },
+            "description": "Any unique string (e.g. a UUID). Retries with the same key return the first response."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PageUpload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "An uploaded file is too big.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "An uploaded file isn't a supported image type.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/journals/{journalId}/exports": {
+      "post": {
+        "tags": [
+          "journals"
+        ],
+        "summary": "Export a journal",
+        "description": "Starts a zipped export of all pages and transcriptions.\n\nWhen the job succeeds, download the file from its `resultUrl`.",
+        "operationId": "exportJournal",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The journal's ID.",
+              "title": "Journalid"
+            },
+            "description": "The journal's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "URL of the job to poll.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri-reference"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pages": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "List pages",
+        "description": "Lists pages, ordered by journal and page number.",
+        "operationId": "listPages",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "journalId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+                  "description": "TypeID of a journal."
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only pages of this journal.",
+              "title": "Journalid"
+            },
+            "description": "Only pages of this journal."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PageStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only pages in this status.",
+              "title": "Status"
+            },
+            "description": "Only pages in this status."
+          },
+          {
+            "name": "dateFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only entries dated on or after this day.",
+              "title": "Datefrom"
+            },
+            "description": "Only entries dated on or after this day."
+          },
+          {
+            "name": "dateTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only entries dated on or before this day.",
+              "title": "Dateto"
+            },
+            "description": "Only entries dated on or before this day."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return.",
+              "default": 25,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `nextCursor` from the previous page. Omit for the first page.",
+              "title": "Cursor"
+            },
+            "description": "The `nextCursor` from the previous page. Omit for the first page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pages/{pageId}": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Get a page",
+        "description": "Returns a page with all of its transcribed blocks, in reading order.",
+        "operationId": "getPage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The page's ID.",
+              "title": "Pageid"
+            },
+            "description": "The page's ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Update a page",
+        "description": "Corrects page metadata (number, label, dates) or moves the page to another journal.\n\nChanging dates or the journal re-indexes the page.",
+        "operationId": "updatePage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The page's ID.",
+              "title": "Pageid"
+            },
+            "description": "The page's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state (e.g. a job is still running).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Delete a page",
+        "description": "Deletes a page, its images, blocks and search index entries. This can't be undone.",
+        "operationId": "deletePage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The page's ID.",
+              "title": "Pageid"
+            },
+            "description": "The page's ID."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pages/{pageId}/image": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Get a page image",
+        "description": "Returns the page image.\n\n`normalized` (the default) is the rotated, resized JPEG that all block locations refer to.\n`original` is the uploaded file as-is, and `thumbnail` is a small JPEG preview.",
+        "operationId": "getPageImage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The page's ID.",
+              "title": "Pageid"
+            },
+            "description": "The page's ID."
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ImageVariant",
+              "description": "Which version of the image to return.",
+              "default": "normalized"
+            },
+            "description": "Which version of the image to return."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image bytes.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heic": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pages/{pageId}/blocks": {
+      "put": {
+        "tags": [
+          "pages",
+          "blocks"
+        ],
+        "summary": "Replace a page's blocks",
+        "description": "Replaces the whole transcription of a page, in reading order.\n\nBlocks sent with an `id` are updated in place (so existing chat sources keep working); blocks\nwithout one are created; existing blocks that aren't sent are deleted. The page is re-indexed in\nthe background.",
+        "operationId": "replacePageBlocks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The page's ID.",
+              "title": "Pageid"
+            },
+            "description": "The page's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlocksReplace"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlocksReplaceResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state (e.g. a job is still running).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pages/{pageId}/transcribe": {
+      "post": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Re-transcribe a page",
+        "description": "Throws away the current blocks and reads the page again, optionally with another model.\n\nManual edits are lost.",
+        "operationId": "transcribePage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The page's ID.",
+              "title": "Pageid"
+            },
+            "description": "The page's ID."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TranscribeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "URL of the job to poll.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri-reference"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state (e.g. a job is still running).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blocks/{blockId}": {
+      "get": {
+        "tags": [
+          "blocks"
+        ],
+        "summary": "Get a block",
+        "description": "Returns a single block. Handy for resolving a chat source.",
+        "operationId": "getBlock",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^blk_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The block's ID.",
+              "title": "Blockid"
+            },
+            "description": "The block's ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Block"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "blocks"
+        ],
+        "summary": "Fix a block",
+        "description": "Corrects a block's text, kind or `uncertain` flag. Its page is re-indexed in the background.",
+        "operationId": "updateBlock",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^blk_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The block's ID.",
+              "title": "Blockid"
+            },
+            "description": "The block's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockUpdateResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blocks/{blockId}/image": {
+      "get": {
+        "tags": [
+          "blocks"
+        ],
+        "summary": "Get a block's image crop",
+        "description": "Returns the part of the normalized page image that the block covers, plus a little padding.",
+        "operationId": "getBlockImage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^blk_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The block's ID.",
+              "title": "Blockid"
+            },
+            "description": "The block's ID."
+          },
+          {
+            "name": "padding",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 0.25,
+              "minimum": 0,
+              "description": "Extra margin around the block, as a fraction of the page height.",
+              "default": 0.02,
+              "title": "Padding"
+            },
+            "description": "Extra margin around the block, as a fraction of the page height."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A JPEG crop of the block.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search the journal",
+        "description": "Finds passages by meaning and by exact words.\n\n`hybrid` (the default) merges vector and full-text results with reciprocal rank fusion;\n`vector` and `keyword` return either side on its own, which helps when tuning. Each hit is one\nchunk of a page, with the blocks it covers.",
+        "operationId": "search",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "What to look for, in plain words.",
+              "title": "Q"
+            },
+            "description": "What to look for, in plain words."
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SearchMode",
+              "description": "Which retrieval to use.",
+              "default": "hybrid"
+            },
+            "description": "Which retrieval to use."
+          },
+          {
+            "name": "journalId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+                  "description": "TypeID of a journal."
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only search this journal.",
+              "title": "Journalid"
+            },
+            "description": "Only search this journal."
+          },
+          {
+            "name": "dateFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only entries dated on or after this day.",
+              "title": "Datefrom"
+            },
+            "description": "Only entries dated on or after this day."
+          },
+          {
+            "name": "dateTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only entries dated on or before this day.",
+              "title": "Dateto"
+            },
+            "description": "Only entries dated on or before this day."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Maximum number of hits.",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "Maximum number of hits."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "List conversations",
+        "description": "Lists chat threads, most recently active first.",
+        "operationId": "listConversations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return.",
+              "default": 25,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `nextCursor` from the previous page. Omit for the first page.",
+              "title": "Cursor"
+            },
+            "description": "The `nextCursor` from the previous page. Omit for the first page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Start a conversation",
+        "description": "Creates an empty chat thread. Without a title, one is generated from the first message.",
+        "operationId": "createConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ConversationCreate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "URL of the new conversation.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri-reference"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{conversationId}": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Get a conversation",
+        "description": "Returns a chat thread with all of its messages, oldest first.",
+        "operationId": "getConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The conversation's ID.",
+              "title": "Conversationid"
+            },
+            "description": "The conversation's ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Rename a conversation",
+        "description": "Changes a conversation's title.",
+        "operationId": "updateConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The conversation's ID.",
+              "title": "Conversationid"
+            },
+            "description": "The conversation's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Delete a conversation",
+        "description": "Deletes a chat thread and its messages. Journal pages are not affected.",
+        "operationId": "deleteConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The conversation's ID.",
+              "title": "Conversationid"
+            },
+            "description": "The conversation's ID."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{conversationId}/messages": {
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Send a message",
+        "description": "Sends a user message and gets the agent's answer.\n\nThe answer cites journal blocks as `[1]`, `[2]`, …, matching the `ref` of each entry in\n`sources`. Only blocks the agent actually retrieved can be cited.\n\nPick the response style with the `Accept` header:\n\n- `application/json` waits and returns the finished assistant `Message`.\n- `text/event-stream` streams the answer as Server-Sent Events. Each event's `event:` field is\n  the `type` of a `ChatStreamEvent`, and its `data:` field is that event as JSON. The stream\n  always ends with `messageEnd` (carrying the same `Message` as the JSON mode) or `error`.",
+        "operationId": "sendMessage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The conversation's ID.",
+              "title": "Conversationid"
+            },
+            "description": "The conversation's ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The assistant's answer, as JSON or as Server-Sent Events depending on `Accept`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "A stream of Server-Sent Events. Each event's `data:` is one JSON `ChatStreamEvent`.",
+                  "x-event-schema": {
+                    "$ref": "#/components/schemas/ChatStreamEvent"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The `Accept` header asks for a format this endpoint can't produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state (e.g. a job is still running).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List jobs",
+        "description": "Lists background jobs, newest first.",
+        "operationId": "listJobs",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only jobs in this status.",
+              "title": "Status"
+            },
+            "description": "Only jobs in this status."
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only jobs of this kind.",
+              "title": "Kind"
+            },
+            "description": "Only jobs of this kind."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of items to return.",
+              "default": 25,
+              "title": "Limit"
+            },
+            "description": "Maximum number of items to return."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `nextCursor` from the previous page. Omit for the first page.",
+              "title": "Cursor"
+            },
+            "description": "The `nextCursor` from the previous page. Omit for the first page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get a job",
+        "description": "Returns a job's status and progress. Poll this after a `202 Accepted`.",
+        "operationId": "getJob",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^job_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The job's ID.",
+              "title": "Jobid"
+            },
+            "description": "The job's ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/result": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Download a job's result",
+        "description": "Downloads the file a finished job produced (currently only exports).\n\nReturns `409` while the job hasn't succeeded.",
+        "operationId": "getJobResult",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^job_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+              "description": "The job's ID.",
+              "title": "Jobid"
+            },
+            "description": "The job's ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The result file, with a `Content-Disposition` filename.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource doesn't exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state (e.g. a job is still running).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some values are invalid (including malformed IDs). Each one is listed in `errors`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reindex": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Re-index everything",
+        "description": "Rebuilds the search index for all pages, e.g. after switching the embedding model.\n\nTranscriptions are kept.",
+        "operationId": "reindexAll",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "URL of the job to poll.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri-reference"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request couldn't be parsed (e.g. malformed JSON or multipart).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state (e.g. a job is still running).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BandRange": {
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Start",
+            "description": "First band the block touches."
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "End",
+            "description": "Last band the block touches (≥ `start`)."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "BandRange",
+        "description": "A block's vertical extent in the page's ruler bands (see `Bands`)."
+      },
+      "Bands": {
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Start",
+            "description": "First band the block touches."
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "End",
+            "description": "Last band the block touches (≥ `start`)."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Total",
+            "description": "How many bands the page was split into."
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "total"
+        ],
+        "title": "Bands",
+        "description": "A block's vertical extent in ruler bands.\n\nWhile transcribing, the page is split into `total` equal horizontal bands numbered from 1 at\nthe top; the block covers bands `start` to `end`."
+      },
+      "Block": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^blk_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a block."
+          },
+          "pageId": {
+            "type": "string",
+            "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Pageid",
+            "description": "TypeID of a page."
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Seq",
+            "description": "Position in reading order, starting at 0."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BlockKind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The transcribed text. Unreadable words are written as `[?]`."
+          },
+          "uncertain": {
+            "type": "boolean",
+            "title": "Uncertain",
+            "description": "`true` when the model wasn't sure about parts of this block."
+          },
+          "location": {
+            "$ref": "#/components/schemas/Location"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "pageId",
+          "seq",
+          "kind",
+          "text",
+          "uncertain",
+          "location"
+        ],
+        "title": "Block",
+        "description": "A located piece of text on a page."
+      },
+      "BlockInput": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^blk_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+                "description": "TypeID of a block."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Set to update an existing block in place; omit to create a new one."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BlockKind"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Text",
+            "description": "The block's text."
+          },
+          "uncertain": {
+            "type": "boolean",
+            "title": "Uncertain",
+            "description": "Whether parts of the text are still unsure.",
+            "default": false
+          },
+          "bands": {
+            "$ref": "#/components/schemas/BandRange"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text",
+          "bands",
+          "side"
+        ],
+        "title": "BlockInput",
+        "description": "One block in a full replacement of a page's blocks."
+      },
+      "BlockKind": {
+        "type": "string",
+        "enum": [
+          "heading",
+          "paragraph",
+          "list",
+          "marginNote",
+          "drawing",
+          "other"
+        ],
+        "title": "BlockKind",
+        "description": "What kind of thing a block is on the page. Drawings are described in words, in brackets."
+      },
+      "BlockUpdate": {
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text",
+            "description": "Corrected text."
+          },
+          "uncertain": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uncertain",
+            "description": "Whether parts of the text are still unsure."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BlockUpdate",
+        "description": "Corrections to a single block. Only the given fields change."
+      },
+      "BlockUpdateResult": {
+        "properties": {
+          "block": {
+            "$ref": "#/components/schemas/Block"
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        },
+        "type": "object",
+        "required": [
+          "block",
+          "job"
+        ],
+        "title": "BlockUpdateResult",
+        "description": "The corrected block, plus the re-index job."
+      },
+      "BlocksReplace": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/BlockInput"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Blocks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "blocks"
+        ],
+        "title": "BlocksReplace",
+        "description": "All blocks of a page, in reading order."
+      },
+      "BlocksReplaceResult": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "type": "array",
+            "title": "Blocks",
+            "description": "The page's blocks after the change, in reading order."
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        },
+        "type": "object",
+        "required": [
+          "blocks",
+          "job"
+        ],
+        "title": "BlocksReplaceResult",
+        "description": "A page's blocks after a replacement, plus the re-index job."
+      },
+      "Box": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X",
+            "description": "Left edge."
+          },
+          "y": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "description": "Top edge."
+          },
+          "width": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Width",
+            "description": "Width."
+          },
+          "height": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Height",
+            "description": "Height."
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "Box",
+        "description": "A rectangle in normalized page coordinates (`0,0` top-left, `1,1` bottom-right)."
+      },
+      "ChatStreamEvent": {
+        "description": "One Server-Sent Event of a streamed answer. The SSE `event:` field equals `type`.",
+        "discriminator": {
+          "mapping": {
+            "error": "#/components/schemas/ErrorEvent",
+            "messageEnd": "#/components/schemas/MessageEndEvent",
+            "messageStart": "#/components/schemas/MessageStartEvent",
+            "source": "#/components/schemas/SourceEvent",
+            "textDelta": "#/components/schemas/TextDeltaEvent",
+            "toolCall": "#/components/schemas/ToolCallEvent",
+            "toolResult": "#/components/schemas/ToolResultEvent"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MessageStartEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ToolCallEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ToolResultEvent"
+          },
+          {
+            "$ref": "#/components/schemas/TextDeltaEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SourceEvent"
+          },
+          {
+            "$ref": "#/components/schemas/MessageEndEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ErrorEvent"
+          }
+        ]
+      },
+      "ConfiguredModels": {
+        "properties": {
+          "transcribe": {
+            "type": "string",
+            "title": "Transcribe",
+            "description": "Model that reads page images."
+          },
+          "chat": {
+            "type": "string",
+            "title": "Chat",
+            "description": "Model behind the chat agent."
+          },
+          "embed": {
+            "type": "string",
+            "title": "Embed",
+            "description": "Embedding model used for search."
+          }
+        },
+        "type": "object",
+        "required": [
+          "transcribe",
+          "chat",
+          "embed"
+        ],
+        "title": "ConfiguredModels",
+        "description": "The OpenAI models the server is configured with."
+      },
+      "Conversation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a conversation."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Thread title; `null` until one is set or generated."
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Messagecount",
+            "description": "Number of messages in the thread."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "RFC 3339 timestamp in UTC."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "messageCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Conversation",
+        "description": "A chat thread."
+      },
+      "ConversationCreate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Optional title; generated from the first message when omitted."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConversationCreate",
+        "description": "A new chat thread."
+      },
+      "ConversationDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a conversation."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Thread title; `null` until one is set or generated."
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Messagecount",
+            "description": "Number of messages in the thread."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "All messages, oldest first."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "messageCount",
+          "createdAt",
+          "updatedAt",
+          "messages"
+        ],
+        "title": "ConversationDetail",
+        "description": "A chat thread with all of its messages."
+      },
+      "ConversationList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Conversation"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor",
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "ConversationList",
+        "description": "A page of conversations."
+      },
+      "ConversationUpdate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "description": "New title."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "ConversationUpdate",
+        "description": "A new title for a chat thread."
+      },
+      "DependencyStatus": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "unavailable"
+        ],
+        "title": "DependencyStatus",
+        "description": "Whether a dependency is reachable."
+      },
+      "ErrorEvent": {
+        "description": "Answering failed. The stream ends after this event.",
+        "properties": {
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          },
+          "problem": {
+            "$ref": "#/components/schemas/Problem"
+          }
+        },
+        "required": [
+          "type",
+          "problem"
+        ],
+        "title": "ErrorEvent",
+        "type": "object"
+      },
+      "ExportCreate": {
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/ExportFormat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format"
+        ],
+        "title": "ExportCreate",
+        "description": "Options for a journal export."
+      },
+      "ExportFormat": {
+        "type": "string",
+        "enum": [
+          "markdown",
+          "json"
+        ],
+        "title": "ExportFormat",
+        "description": "`markdown`: one file per page plus images. `json`: everything machine-readable. Both come zipped."
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/HealthStatus"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "The running app version."
+          },
+          "database": {
+            "$ref": "#/components/schemas/DependencyStatus"
+          },
+          "models": {
+            "$ref": "#/components/schemas/ConfiguredModels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "database",
+          "models"
+        ],
+        "title": "Health",
+        "description": "Service status."
+      },
+      "HealthStatus": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "degraded"
+        ],
+        "title": "HealthStatus",
+        "description": "`degraded` when a dependency (e.g. the database) is unhealthy."
+      },
+      "ImageVariant": {
+        "type": "string",
+        "enum": [
+          "normalized",
+          "original",
+          "thumbnail"
+        ],
+        "title": "ImageVariant",
+        "description": "Which version of a page image to return."
+      },
+      "Job": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^job_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a job."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "target": {
+            "$ref": "#/components/schemas/JobTarget"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobProgress"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How far along the job is, when it can tell."
+          },
+          "resultUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resulturl",
+            "description": "Where to download the result once `succeeded` (exports only)."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Problem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the job failed; `null` unless `status` is `failed`."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 timestamp in UTC."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat",
+            "description": "When a worker picked the job up."
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 timestamp in UTC."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat",
+            "description": "When the job succeeded or failed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "target",
+          "progress",
+          "resultUrl",
+          "error",
+          "createdAt",
+          "startedAt",
+          "finishedAt"
+        ],
+        "title": "Job",
+        "description": "A unit of background work. Poll it until `status` is `succeeded` or `failed`."
+      },
+      "JobKind": {
+        "type": "string",
+        "enum": [
+          "ingestPage",
+          "transcribePage",
+          "reindexPage",
+          "reindexAll",
+          "exportJournal"
+        ],
+        "title": "JobKind",
+        "description": "What a job does."
+      },
+      "JobList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor",
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "JobList",
+        "description": "A page of jobs."
+      },
+      "JobProgress": {
+        "properties": {
+          "done": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Done",
+            "description": "Units finished so far."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "description": "Total units of work."
+          }
+        },
+        "type": "object",
+        "required": [
+          "done",
+          "total"
+        ],
+        "title": "JobProgress",
+        "description": "How far along a job is."
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "JobStatus",
+        "description": "Lifecycle of a job."
+      },
+      "JobTarget": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/JobTargetType"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "ID of the page or journal; `null` for `all`."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "JobTarget",
+        "description": "What the job works on."
+      },
+      "JobTargetType": {
+        "type": "string",
+        "enum": [
+          "page",
+          "journal",
+          "all"
+        ],
+        "title": "JobTargetType",
+        "description": "Kind of thing a job works on."
+      },
+      "Journal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a journal."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Display name."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Optional notes about the journal."
+          },
+          "pageCount": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pagecount",
+            "description": "Number of pages in the journal."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "RFC 3339 timestamp in UTC."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "pageCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Journal",
+        "description": "A notebook (or volume) of handwritten pages."
+      },
+      "JournalCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Display name."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Optional notes about the journal."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "JournalCreate",
+        "description": "A new journal."
+      },
+      "JournalList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Journal"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor",
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "JournalList",
+        "description": "A page of journals."
+      },
+      "JournalUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "New display name."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "New notes; `null` clears them."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "JournalUpdate",
+        "description": "Changes to a journal. Only the given fields change."
+      },
+      "Location": {
+        "properties": {
+          "box": {
+            "$ref": "#/components/schemas/Box"
+          },
+          "bands": {
+            "$ref": "#/components/schemas/Bands"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Human-friendly description of the spot, e.g. \"middle of the page, paragraph 3\"."
+          }
+        },
+        "type": "object",
+        "required": [
+          "box",
+          "bands",
+          "side",
+          "label"
+        ],
+        "title": "Location",
+        "description": "Where a block sits on its page."
+      },
+      "Message": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^msg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a message."
+          },
+          "conversationId": {
+            "type": "string",
+            "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Conversationid",
+            "description": "TypeID of a conversation."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Message text (Markdown). Assistant messages cite sources as `[n]`."
+          },
+          "toolCalls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            },
+            "type": "array",
+            "title": "Toolcalls",
+            "description": "Tools the agent used while answering, in order. Empty for user messages."
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Journal blocks cited in `content`, one per `[n]`. Empty for user messages."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "conversationId",
+          "role",
+          "content",
+          "toolCalls",
+          "sources",
+          "createdAt"
+        ],
+        "title": "Message",
+        "description": "A chat message."
+      },
+      "MessageCreate": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Content",
+            "description": "The user's message."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "MessageCreate",
+        "description": "A user message."
+      },
+      "MessageEndEvent": {
+        "description": "The answer is complete. Carries the stored message, exactly as the JSON mode returns it.",
+        "properties": {
+          "type": {
+            "const": "messageEnd",
+            "default": "messageEnd",
+            "title": "Type",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "required": [
+          "type",
+          "message"
+        ],
+        "title": "MessageEndEvent",
+        "type": "object"
+      },
+      "MessageStartEvent": {
+        "description": "The assistant started answering.",
+        "properties": {
+          "type": {
+            "const": "messageStart",
+            "default": "messageStart",
+            "title": "Type",
+            "type": "string"
+          },
+          "conversationId": {
+            "description": "TypeID of a conversation.",
+            "pattern": "^cnv_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "messageId": {
+            "description": "TypeID of a message.",
+            "pattern": "^msg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Messageid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "conversationId",
+          "messageId"
+        ],
+        "title": "MessageStartEvent",
+        "type": "object"
+      },
+      "Page": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a page."
+          },
+          "journalId": {
+            "type": "string",
+            "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Journalid",
+            "description": "TypeID of a journal."
+          },
+          "pageNumber": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Pagenumber",
+            "description": "Position of the page in its journal."
+          },
+          "pageLabel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagelabel",
+            "description": "Page number or label as written on the page itself, if any."
+          },
+          "entryDates": {
+            "items": {
+              "type": "string",
+              "format": "date",
+              "description": "A calendar day."
+            },
+            "type": "array",
+            "title": "Entrydates",
+            "description": "Dates of the entries on this page, as read from the page or set by hand."
+          },
+          "status": {
+            "$ref": "#/components/schemas/PageStatus"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Problem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why processing failed; `null` unless `status` is `failed`."
+          },
+          "image": {
+            "$ref": "#/components/schemas/PageImage"
+          },
+          "transcriptionModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcriptionmodel",
+            "description": "Model that produced the current transcription; `null` until transcribed."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "RFC 3339 timestamp in UTC."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "journalId",
+          "pageNumber",
+          "pageLabel",
+          "entryDates",
+          "status",
+          "error",
+          "image",
+          "transcriptionModel",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Page",
+        "description": "An uploaded page."
+      },
+      "PageDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a page."
+          },
+          "journalId": {
+            "type": "string",
+            "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Journalid",
+            "description": "TypeID of a journal."
+          },
+          "pageNumber": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Pagenumber",
+            "description": "Position of the page in its journal."
+          },
+          "pageLabel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagelabel",
+            "description": "Page number or label as written on the page itself, if any."
+          },
+          "entryDates": {
+            "items": {
+              "type": "string",
+              "format": "date",
+              "description": "A calendar day."
+            },
+            "type": "array",
+            "title": "Entrydates",
+            "description": "Dates of the entries on this page, as read from the page or set by hand."
+          },
+          "status": {
+            "$ref": "#/components/schemas/PageStatus"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Problem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why processing failed; `null` unless `status` is `failed`."
+          },
+          "image": {
+            "$ref": "#/components/schemas/PageImage"
+          },
+          "transcriptionModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcriptionmodel",
+            "description": "Model that produced the current transcription; `null` until transcribed."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "RFC 3339 timestamp in UTC."
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "type": "array",
+            "title": "Blocks",
+            "description": "Transcribed blocks in reading order."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "journalId",
+          "pageNumber",
+          "pageLabel",
+          "entryDates",
+          "status",
+          "error",
+          "image",
+          "transcriptionModel",
+          "createdAt",
+          "updatedAt",
+          "blocks"
+        ],
+        "title": "PageDetail",
+        "description": "A page with its transcribed blocks."
+      },
+      "PageImage": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Width",
+            "description": "Width of the normalized image in pixels."
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Height",
+            "description": "Height of the normalized image in pixels."
+          },
+          "urls": {
+            "$ref": "#/components/schemas/PageImageUrls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "urls"
+        ],
+        "title": "PageImage",
+        "description": "A page's image."
+      },
+      "PageImageUrls": {
+        "properties": {
+          "normalized": {
+            "type": "string",
+            "title": "Normalized",
+            "description": "The rotated, resized image all block locations refer to."
+          },
+          "original": {
+            "type": "string",
+            "title": "Original",
+            "description": "The uploaded file as-is."
+          },
+          "thumbnail": {
+            "type": "string",
+            "title": "Thumbnail",
+            "description": "A small preview."
+          }
+        },
+        "type": "object",
+        "required": [
+          "normalized",
+          "original",
+          "thumbnail"
+        ],
+        "title": "PageImageUrls",
+        "description": "Where to fetch each version of a page image."
+      },
+      "PageList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Page"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor",
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "PageList",
+        "description": "A page of pages."
+      },
+      "PageStatus": {
+        "type": "string",
+        "enum": [
+          "uploaded",
+          "transcribing",
+          "indexing",
+          "ready",
+          "failed"
+        ],
+        "title": "PageStatus",
+        "description": "Where a page is in processing.\n\n`uploaded` (waiting for the worker) → `transcribing` → `indexing` → `ready`.\n`failed` means a step failed; see `error` and re-transcribe to retry."
+      },
+      "PageSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^pg_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Id",
+            "description": "TypeID of a page."
+          },
+          "journalId": {
+            "type": "string",
+            "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "title": "Journalid",
+            "description": "TypeID of a journal."
+          },
+          "journalName": {
+            "type": "string",
+            "title": "Journalname",
+            "description": "Name of the page's journal."
+          },
+          "pageNumber": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Pagenumber",
+            "description": "Position of the page in its journal."
+          },
+          "pageLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagelabel",
+            "description": "Page number or label as written on the page itself, if any."
+          },
+          "entryDates": {
+            "items": {
+              "type": "string",
+              "format": "date",
+              "description": "A calendar day."
+            },
+            "type": "array",
+            "title": "Entrydates",
+            "description": "Dates of the entries on this page."
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "title": "Thumbnailurl",
+            "description": "Small preview image."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "journalId",
+          "journalName",
+          "pageNumber",
+          "pageLabel",
+          "entryDates",
+          "thumbnailUrl"
+        ],
+        "title": "PageSummary",
+        "description": "The bits of a page needed to show where something came from."
+      },
+      "PageUpdate": {
+        "properties": {
+          "journalId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^jrn_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+                "description": "TypeID of a journal."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journalid",
+            "description": "Move the page to this journal."
+          },
+          "pageNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagenumber",
+            "description": "New position in the journal. Must not be taken by another page."
+          },
+          "pageLabel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagelabel",
+            "description": "Label as written on the page; `null` clears it."
+          },
+          "entryDates": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "A calendar day."
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrydates",
+            "description": "Corrected entry dates."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PageUpdate",
+        "description": "Corrections to a page's metadata. Only the given fields change."
+      },
+      "PageUpload": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "Page images in page order. JPEG, PNG, HEIC/HEIF or WebP, up to 25 MB each."
+          },
+          "startPageNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startpagenumber",
+            "description": "Page number for the first file; the rest count up from it. Defaults to the journal's next free page number."
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_uploadPages"
+      },
+      "Problem": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Identifies the problem type; `about:blank` when there's nothing more specific.",
+            "default": "about:blank"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short, human-readable summary of the problem type."
+          },
+          "status": {
+            "type": "integer",
+            "maximum": 599.0,
+            "minimum": 400.0,
+            "title": "Status",
+            "description": "The HTTP status code."
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "What went wrong in this particular case."
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance",
+            "description": "The request path that caused the problem."
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProblemError"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors",
+            "description": "Individual validation problems (only for `422`)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "Problem",
+        "description": "An RFC 9457 problem details object."
+      },
+      "ProblemError": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "What's wrong with this value."
+          },
+          "pointer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pointer",
+            "description": "JSON Pointer to the offending value in the request body, e.g. `/name`."
+          },
+          "parameter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameter",
+            "description": "Name of the offending query, path or header parameter."
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ProblemError",
+        "description": "One invalid value in a request."
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant"
+        ],
+        "title": "Role",
+        "description": "Who wrote a message."
+      },
+      "SearchHit": {
+        "properties": {
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Relevance score; higher is better. Only comparable within one response."
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageSummary"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "type": "array",
+            "title": "Blocks",
+            "description": "The blocks this hit covers, in reading order."
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "Short excerpt around the best match."
+          }
+        },
+        "type": "object",
+        "required": [
+          "score",
+          "page",
+          "blocks",
+          "snippet"
+        ],
+        "title": "SearchHit",
+        "description": "One chunk of a page that matches the query."
+      },
+      "SearchMode": {
+        "type": "string",
+        "enum": [
+          "hybrid",
+          "vector",
+          "keyword"
+        ],
+        "title": "SearchMode",
+        "description": "Which retrieval to use. `hybrid` merges `vector` and `keyword` results."
+      },
+      "SearchResults": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "description": "The query as received."
+          },
+          "mode": {
+            "$ref": "#/components/schemas/SearchMode",
+            "description": "The retrieval mode that was used."
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "mode",
+          "items"
+        ],
+        "title": "SearchResults",
+        "description": "Search hits, best first."
+      },
+      "Side": {
+        "type": "string",
+        "enum": [
+          "left",
+          "right",
+          "full"
+        ],
+        "title": "Side",
+        "description": "Horizontal placement. `full` spans the text width; `left`/`right` are margin notes or columns."
+      },
+      "Source": {
+        "properties": {
+          "ref": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Ref",
+            "description": "The `n` in the `[n]` marker in the message text."
+          },
+          "block": {
+            "$ref": "#/components/schemas/Block"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageSummary"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote",
+            "description": "The part of the block the answer relies on."
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "block",
+          "page",
+          "quote"
+        ],
+        "title": "Source",
+        "description": "A journal block cited in an answer."
+      },
+      "SourceEvent": {
+        "description": "A citation was confirmed. Sent at the end, before `messageEnd`, once per source.",
+        "properties": {
+          "type": {
+            "const": "source",
+            "default": "source",
+            "title": "Type",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          }
+        },
+        "required": [
+          "type",
+          "source"
+        ],
+        "title": "SourceEvent",
+        "type": "object"
+      },
+      "TextDeltaEvent": {
+        "description": "The next piece of the answer. Concatenate all deltas to get the message `content`.",
+        "properties": {
+          "type": {
+            "const": "textDelta",
+            "default": "textDelta",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "description": "Text to append.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "TextDeltaEvent",
+        "type": "object"
+      },
+      "ToolCall": {
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/ToolName"
+          },
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Arguments",
+            "description": "The arguments the agent passed."
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "One-line, human-readable summary of the result."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "arguments",
+          "summary"
+        ],
+        "title": "ToolCall",
+        "description": "One tool call the agent made."
+      },
+      "ToolCallEvent": {
+        "description": "The agent is calling a tool, e.g. to show \"Searching 'Lisbon'…\".",
+        "properties": {
+          "type": {
+            "const": "toolCall",
+            "default": "toolCall",
+            "title": "Type",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ToolName"
+          },
+          "arguments": {
+            "additionalProperties": true,
+            "description": "The arguments the agent passed.",
+            "title": "Arguments",
+            "type": "object"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "arguments"
+        ],
+        "title": "ToolCallEvent",
+        "type": "object"
+      },
+      "ToolName": {
+        "type": "string",
+        "enum": [
+          "searchJournal",
+          "findExact",
+          "listPages",
+          "readPage",
+          "viewBlockImage"
+        ],
+        "title": "ToolName",
+        "description": "Tools the agent can use."
+      },
+      "ToolResultEvent": {
+        "description": "A tool call finished.",
+        "properties": {
+          "type": {
+            "const": "toolResult",
+            "default": "toolResult",
+            "title": "Type",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ToolName"
+          },
+          "summary": {
+            "description": "One-line, human-readable summary of the result.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "summary"
+        ],
+        "title": "ToolResultEvent",
+        "type": "object"
+      },
+      "TranscribeRequest": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Vision model to use instead of the configured one."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TranscribeRequest",
+        "description": "Options for re-transcribing a page."
+      },
+      "UploadItem": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "The uploaded file's name."
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate",
+            "description": "`true` if this exact file was already in the journal; `page` is then the existing page."
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The processing job for a new page; `null` for duplicates."
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "page",
+          "duplicate",
+          "job"
+        ],
+        "title": "UploadItem",
+        "description": "The outcome for one uploaded file."
+      },
+      "UploadResult": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UploadItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "UploadResult",
+        "description": "One entry per uploaded file, in upload order."
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "description": "The `API_TOKEN` configured on the server. Only needed when one is set.",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Service status."
+    },
+    {
+      "name": "journals",
+      "description": "Notebooks (or volumes) that pages belong to."
+    },
+    {
+      "name": "pages",
+      "description": "Uploaded page images and their transcriptions."
+    },
+    {
+      "name": "blocks",
+      "description": "Located text on a page (paragraphs, lists, margin notes)."
+    },
+    {
+      "name": "search",
+      "description": "Hybrid semantic + keyword search over all pages."
+    },
+    {
+      "name": "conversations",
+      "description": "Chat threads with the journal agent."
+    },
+    {
+      "name": "jobs",
+      "description": "Background work and its progress."
+    },
+    {
+      "name": "admin",
+      "description": "Maintenance operations."
+    }
+  ]
+}
