@@ -10,10 +10,12 @@ from pydantic import TypeAdapter
 from pydantic.alias_generators import to_camel
 
 from kritzellm import __version__
+from kritzellm.config import Settings
+from kritzellm.db import create_engine
 
 from .auth import require_token
 from .errors import PROBLEM_JSON, install_problem_handlers
-from .routes import blocks, conversations, health, jobs, journals, pages, search
+from .routes import blocks, conversations, docs, health, jobs, journals, pages, search
 from .schemas.conversations import ChatStreamEvent
 
 API_PREFIX = "/api/v1"
@@ -58,7 +60,8 @@ def _operation_id(route: APIRoute) -> str:
     return to_camel(route.name)
 
 
-def create_api() -> FastAPI:
+def create_api(settings: Settings | None = None) -> FastAPI:
+    """The API app. The docs are at `/docs` and the generated spec at `/openapi.json`."""
     api = FastAPI(
         title="kritzeLLM API",
         version=__version__,
@@ -69,9 +72,14 @@ def create_api() -> FastAPI:
         root_path_in_servers=False,
         generate_unique_id_function=_operation_id,
         separate_input_output_schemas=False,
+        docs_url=None,
+        redoc_url=None,
     )
+    api.state.settings = settings = settings or Settings()
+    api.state.db_engine = create_engine(settings)
     install_problem_handlers(api)
 
+    api.include_router(docs.router)
     api.include_router(health.router)
     authed = [Depends(require_token)]
     for module in (journals, pages, blocks, search, conversations, jobs):
@@ -87,11 +95,7 @@ def create_api() -> FastAPI:
 
 
 def render_openapi() -> str:
-    """The OpenAPI document exactly as committed to `api/openapi.json`.
-
-    Whole numbers are written as `1`, not `1.0`, the way JavaScript's `JSON.stringify` writes them.
-    release-please rewrites the file with it when bumping the version, so both stay byte-identical.
-    """
+    """The OpenAPI document exactly as committed to `api/openapi.json`."""
     spec = _whole_numbers_as_ints(create_api().openapi())
     return json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
 
@@ -120,7 +124,7 @@ def build_openapi(api: FastAPI) -> dict[str, Any]:
     )
     schemas: dict[str, Any] = spec["components"]["schemas"]
 
-    # Errors are problem+json, not plain JSON.
+    # Errors are problem+json
     for operations in spec["paths"].values():
         for operation in operations.values():
             for code, response in operation.get("responses", {}).items():
@@ -128,14 +132,14 @@ def build_openapi(api: FastAPI) -> dict[str, Any]:
                 if code.startswith(("4", "5")) and "application/json" in content:
                     content[PROBLEM_JSON] = content.pop("application/json")
 
-    # FastAPI's generated validation-error schemas are replaced by Problem.
+    # FastAPI's generated validation-error schemas are replaced by Problem
     for name in ("HTTPValidationError", "ValidationError"):
         schemas.pop(name, None)
 
     # The multipart upload body gets a proper name.
     renames = {name: "PageUpload" for name in schemas if name.startswith("Body_uploadPages")}
 
-    # The chat stream's event shapes aren't used by any route directly, so add them.
+    # SSE replacements
     event_schema = TypeAdapter(ChatStreamEvent).json_schema(
         ref_template="#/components/schemas/{model}", mode="serialization", by_alias=True
     )

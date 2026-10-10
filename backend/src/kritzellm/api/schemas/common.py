@@ -24,20 +24,16 @@ class InputModel(ApiModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _type_id(prefix: str, what: str) -> object:
-    return Annotated[
-        str,
-        StringConstraints(pattern=rf"^{prefix}_[0-7][0-9a-hjkmnp-tv-z]{{25}}$"),
-        Field(description=f"TypeID of a {what}."),
-    ]
+def _type_id(prefix: str) -> StringConstraints:
+    return StringConstraints(pattern=rf"^{prefix}_[0-7][0-9a-hjkmnp-tv-z]{{25}}$")
 
 
-JournalId = _type_id("jrn", "journal")
-PageId = _type_id("pg", "page")
-BlockId = _type_id("blk", "block")
-ConversationId = _type_id("cnv", "conversation")
-MessageId = _type_id("msg", "message")
-JobId = _type_id("job", "job")
+JournalId = Annotated[str, _type_id("jrn"), Field(description="TypeID of a journal.")]
+PageId = Annotated[str, _type_id("pg"), Field(description="TypeID of a page.")]
+BlockId = Annotated[str, _type_id("blk"), Field(description="TypeID of a block.")]
+ConversationId = Annotated[str, _type_id("cnv"), Field(description="TypeID of a conversation.")]
+MessageId = Annotated[str, _type_id("msg"), Field(description="TypeID of a message.")]
+JobId = Annotated[str, _type_id("job"), Field(description="TypeID of a job.")]
 
 Timestamp = Annotated[datetime, Field(description="RFC 3339 timestamp in UTC.")]
 Day = Annotated[date, Field(description="A calendar day.")]

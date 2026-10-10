@@ -80,7 +80,8 @@ jobs:
   compose:
     name: Local stack
     needs: changes
-    if: needs.changes.outputs.docker == 'true'
+    # Backend changes can break the api image too.
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -98,6 +99,8 @@ jobs:
         run: uvx --from rust-just just up
       - name: Check Postgres + pgvector
         run: uvx --from rust-just just db-check
+      - name: Check the API
+        run: uvx --from rust-just just api-check
       - name: Logs on failure
         if: failure()
         run: docker compose logs
@@ -156,6 +159,8 @@ jobs:
         run: uv run ruff check .
       - name: Format
         run: uv run ruff format --check .
+      - name: Typecheck
+        run: uv run pyright
       - name: Test (incl. "is api/openapi.json up to date?")
         run: uv run pytest
 

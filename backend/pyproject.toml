@@ -5,14 +5,19 @@ description = "Search and chat with a handwritten journal."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "asyncpg>=0.32.0",
     "fastapi>=0.141.1",
     "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",
+    "sqlalchemy[asyncio]>=2.1.4",
+    "uvicorn>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
     "httpx2>=2.13.1",
+    "pyright>=1.1.414",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
 ]
@@ -29,6 +34,13 @@ target-version = "py314"
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "ASYNC", "PT"]
 # The formatter keeps code within the line length; long strings (API docs) may run over.
 ignore = ["E501"]
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

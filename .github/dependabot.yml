@@ -29,6 +29,18 @@ updates:
       prefix: chore
       include: scope
 
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: ["deps", "chore", "infra"]
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: npm
     directory: /api
     schedule:
