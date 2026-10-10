@@ -35,6 +35,8 @@ Images and PDFs are rejected by a pre-commit hook unless they live under a `test
    branch itself are free-form.
 
 4. `main` is protected: changes go through PRs, and the `ci-ok` and `pr-title` checks must pass.
+5. Changed a database model? Add a migration with `just db-revision "…"` and read it before committing.
+   CI fails when the models and migrations disagree.
 
 ## Labels
 

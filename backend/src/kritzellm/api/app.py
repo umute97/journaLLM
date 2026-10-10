@@ -11,7 +11,7 @@ from pydantic.alias_generators import to_camel
 
 from kritzellm import __version__
 from kritzellm.config import Settings
-from kritzellm.db import create_engine
+from kritzellm.db import create_engine, create_sessionmaker
 
 from .auth import require_token
 from .errors import PROBLEM_JSON, install_problem_handlers
@@ -77,6 +77,7 @@ def create_api(settings: Settings | None = None) -> FastAPI:
     )
     api.state.settings = settings = settings or Settings()
     api.state.db_engine = create_engine(settings)
+    api.state.sessionmaker = create_sessionmaker(api.state.db_engine)
     install_problem_handlers(api)
 
     api.include_router(docs.router)
