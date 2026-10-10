@@ -10,10 +10,12 @@ from pydantic import TypeAdapter
 from pydantic.alias_generators import to_camel
 
 from kritzellm import __version__
+from kritzellm.config import Settings
+from kritzellm.db import create_engine
 
 from .auth import require_token
 from .errors import PROBLEM_JSON, install_problem_handlers
-from .routes import blocks, conversations, health, jobs, journals, pages, search
+from .routes import blocks, conversations, docs, health, jobs, journals, pages, search
 from .schemas.conversations import ChatStreamEvent
 
 API_PREFIX = "/api/v1"
@@ -58,7 +60,8 @@ def _operation_id(route: APIRoute) -> str:
     return to_camel(route.name)
 
 
-def create_api() -> FastAPI:
+def create_api(settings: Settings | None = None) -> FastAPI:
+    """The API app. The docs are at `/docs` and the generated spec at `/openapi.json`."""
     api = FastAPI(
         title="kritzeLLM API",
         version=__version__,
@@ -69,9 +72,14 @@ def create_api() -> FastAPI:
         root_path_in_servers=False,
         generate_unique_id_function=_operation_id,
         separate_input_output_schemas=False,
+        docs_url=None,
+        redoc_url=None,
     )
+    api.state.settings = settings = settings or Settings()
+    api.state.db_engine = create_engine(settings)
     install_problem_handlers(api)
 
+    api.include_router(docs.router)
     api.include_router(health.router)
     authed = [Depends(require_token)]
     for module in (journals, pages, blocks, search, conversations, jobs):
