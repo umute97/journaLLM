@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,11 @@ def test_committed_spec_matches_the_code() -> None:
     assert _without_version(SPEC_PATH.read_text()) == _without_version(render_openapi()), (
         "api/openapi.json is out of date. Run `just api-export`."
     )
+
+
+def test_spec_writes_whole_numbers_like_javascript() -> None:
+    """release-please rewrites the spec with JSON.stringify, which writes `1.0` as `1`."""
+    assert not re.search(r":\s-?\d+\.0\b", render_openapi())
 
 
 @pytest.mark.parametrize(

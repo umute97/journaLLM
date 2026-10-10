@@ -87,8 +87,23 @@ def create_api() -> FastAPI:
 
 
 def render_openapi() -> str:
-    """The OpenAPI document exactly as committed to `api/openapi.json`."""
-    return json.dumps(create_api().openapi(), indent=2, ensure_ascii=False) + "\n"
+    """The OpenAPI document exactly as committed to `api/openapi.json`.
+
+    Whole numbers are written as `1`, not `1.0`, the way JavaScript's `JSON.stringify` writes them.
+    release-please rewrites the file with it when bumping the version, so both stay byte-identical.
+    """
+    spec = _whole_numbers_as_ints(create_api().openapi())
+    return json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
+
+
+def _whole_numbers_as_ints(value: Any) -> Any:
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _whole_numbers_as_ints(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_whole_numbers_as_ints(item) for item in value]
+    return value
 
 
 def build_openapi(api: FastAPI) -> dict[str, Any]:
