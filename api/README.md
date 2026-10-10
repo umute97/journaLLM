@@ -20,6 +20,13 @@ just api-docs      # docs preview on http://localhost:4011, reloads on save
 > Heads up: Prism can't parse repeated multipart fields, so `POST /journals/{journalId}/pages`
 > always answers `422` in the mock. Try uploads against the real backend.
 
+## Security overrides
+
+Prism (the mock server) pins old, vulnerable versions of `lodash` and `uuid` deep in its
+dependencies. `overrides` in [`package.json`](package.json) forces patched versions; drop them once
+Prism updates. (Its old `@faker-js/faker` can't be overridden without breaking Prism. The
+vulnerable code path isn't reachable here, since Prism only ever reads our own spec, locally.)
+
 ## Lint rules
 
 [`redocly.yaml`](redocly.yaml) extends Redocly's `recommended-strict` and adds a few house rules:
