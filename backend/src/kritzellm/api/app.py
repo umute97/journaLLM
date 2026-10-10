@@ -95,8 +95,7 @@ def create_api(settings: Settings | None = None) -> FastAPI:
 
 
 def render_openapi() -> str:
-    """The OpenAPI document exactly as committed to `api/openapi.json`.
-    """
+    """The OpenAPI document exactly as committed to `api/openapi.json`."""
     spec = _whole_numbers_as_ints(create_api().openapi())
     return json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
 
