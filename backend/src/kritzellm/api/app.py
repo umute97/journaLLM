@@ -96,9 +96,6 @@ def create_api(settings: Settings | None = None) -> FastAPI:
 
 def render_openapi() -> str:
     """The OpenAPI document exactly as committed to `api/openapi.json`.
-
-    Whole numbers are written as `1`, not `1.0`, the way JavaScript's `JSON.stringify` writes them.
-    release-please rewrites the file with it when bumping the version, so both stay byte-identical.
     """
     spec = _whole_numbers_as_ints(create_api().openapi())
     return json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
@@ -128,7 +125,7 @@ def build_openapi(api: FastAPI) -> dict[str, Any]:
     )
     schemas: dict[str, Any] = spec["components"]["schemas"]
 
-    # Errors are problem+json, not plain JSON.
+    # Errors are problem+json
     for operations in spec["paths"].values():
         for operation in operations.values():
             for code, response in operation.get("responses", {}).items():
@@ -136,14 +133,14 @@ def build_openapi(api: FastAPI) -> dict[str, Any]:
                 if code.startswith(("4", "5")) and "application/json" in content:
                     content[PROBLEM_JSON] = content.pop("application/json")
 
-    # FastAPI's generated validation-error schemas are replaced by Problem.
+    # FastAPI's generated validation-error schemas are replaced by Problem
     for name in ("HTTPValidationError", "ValidationError"):
         schemas.pop(name, None)
 
     # The multipart upload body gets a proper name.
     renames = {name: "PageUpload" for name in schemas if name.startswith("Body_uploadPages")}
 
-    # The chat stream's event shapes aren't used by any route directly, so add them.
+    # SSE replacements
     event_schema = TypeAdapter(ChatStreamEvent).json_schema(
         ref_template="#/components/schemas/{model}", mode="serialization", by_alias=True
     )
