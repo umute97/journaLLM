@@ -29,7 +29,7 @@ Images and PDFs are rejected by a pre-commit hook unless they live under a `test
 
    | Types | `feat` `fix` `perf` `refactor` `docs` `test` `build` `ci` `chore` `revert` |
    |---|---|
-   | Scopes | `api` `backend` `web` `cli` `infra` `docs` `deps` `release` |
+   | Scopes | `api` `backend` `web` `cli` `infra` `docs` `deps` `deps-dev` `release` |
 
    Add `!` (or a `BREAKING CHANGE:` line in the body) for breaking changes. Commit messages on the
    branch itself are free-form.
