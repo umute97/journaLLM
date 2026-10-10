@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/umute97/kritzeLLM/compare/v0.1.0...v0.2.0) (2026-10-10)
+
+
+### Features
+
+* **backend:** add the database layer 🗄️ ([#38](https://github.com/umute97/kritzeLLM/issues/38)) ([e5c9871](https://github.com/umute97/kritzeLLM/commit/e5c987196eb8b37a87dd4c81cb585a0fe5652dfd))
+* **backend:** make the api a real, runnable service 🦴 ([#35](https://github.com/umute97/kritzeLLM/issues/35)) ([bde64c1](https://github.com/umute97/kritzeLLM/commit/bde64c1007307060881f9e5b5f1faaa9bcc1b2d8))
+
 ## 0.1.0 (2026-10-10)
 
 
