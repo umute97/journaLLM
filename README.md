@@ -16,8 +16,13 @@ You'll need [Docker](https://www.docker.com/) and [just](https://just.systems) (
 ```sh
 cp .env.example .env   # then fill in your values
 just up                # start the local stack
-just db-check          # → postgres 18.x, pgvector 0.8.x
+just api-check         # → {"status":"ok", …}
 ```
+
+The API and its docs are then at <http://localhost:8000/api/v1/docs> 💖
+
+To run the released images instead, grab [`docker-compose.prod.yml`](docker-compose.prod.yml), set
+`POSTGRES_PASSWORD` and `API_TOKEN`, and run `docker compose -f docker-compose.prod.yml up -d`.
 
 `just` lists every recipe.
 

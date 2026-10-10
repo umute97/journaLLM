@@ -1,3 +1,5 @@
+# Runs the released images from GHCR: `docker compose -f docker-compose.prod.yml up -d`.
+# Needs POSTGRES_PASSWORD and API_TOKEN (in the environment or a `.env` next to this file).
 name: kritzellm
 
 services:
@@ -6,11 +8,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-kritzellm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kritzellm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-kritzellm}
-    ports:
-      # Only reachable from this machine.
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       # Postgres 18+ images keep data under a versioned subdirectory of /var/lib/postgresql.
       - db-data:/var/lib/postgresql
@@ -22,21 +21,20 @@ services:
       start_period: 10s
 
   api:
-    build: backend
+    image: ghcr.io/umute97/kritzellm-api:${KRITZELLM_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kritzellm}:${POSTGRES_PASSWORD:-kritzellm}@db:5432/${POSTGRES_DB:-kritzellm}
-      API_TOKEN: ${API_TOKEN:-}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kritzellm}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-kritzellm}
+      API_TOKEN: ${API_TOKEN:?Set API_TOKEN}
       DATA_DIR: /data
       TRANSCRIBE_MODEL: ${TRANSCRIBE_MODEL:-}
       CHAT_MODEL: ${CHAT_MODEL:-}
       EMBED_MODEL: ${EMBED_MODEL:-}
     ports:
-      # Only reachable from this machine.
-      - "127.0.0.1:${API_PORT:-8000}:8000"
+      - "${API_PORT:-8000}:8000"
     volumes:
       - api-data:/data
 

@@ -1,12 +1,12 @@
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from kritzellm.api.app import render_openapi
-from kritzellm.main import create_app
 
 SPEC_PATH = Path(__file__).resolve().parents[2] / "api" / "openapi.json"
 
@@ -17,9 +17,9 @@ CONVERSATION_ID = "cnv_01k7cbc5d7f9g1h3j5k7m9n1p3"
 JOB_ID = "job_01k7c9a4c6e8g0h2j4k6m8n0p2"
 
 
-@pytest.fixture(scope="module")
-def client() -> TestClient:
-    return TestClient(create_app(), base_url="http://test/api/v1")
+@pytest.fixture
+def client(make_client: Callable[..., TestClient]) -> TestClient:
+    return make_client()
 
 
 def _without_version(spec: str) -> dict:
@@ -42,39 +42,39 @@ def test_spec_writes_whole_numbers_like_javascript() -> None:
     assert not re.search(r":\s-?\d+\.0\b", render_openapi())
 
 
-@pytest.mark.parametrize(
-    ("method", "path", "body"),
-    [
-        ("GET", "/health", None),
-        ("GET", "/journals", None),
-        ("POST", "/journals", {"name": "Summer 2026"}),
-        ("GET", f"/journals/{JOURNAL_ID}", None),
-        ("PATCH", f"/journals/{JOURNAL_ID}", {"name": "Summer 2026 🌻"}),
-        ("DELETE", f"/journals/{JOURNAL_ID}", None),
-        ("POST", f"/journals/{JOURNAL_ID}/exports", {"format": "markdown"}),
-        ("GET", "/pages", None),
-        ("GET", f"/pages/{PAGE_ID}", None),
-        ("PATCH", f"/pages/{PAGE_ID}", {"entryDates": ["2026-07-14"]}),
-        ("DELETE", f"/pages/{PAGE_ID}", None),
-        ("GET", f"/pages/{PAGE_ID}/image", None),
-        ("PUT", f"/pages/{PAGE_ID}/blocks", {"blocks": []}),
-        ("POST", f"/pages/{PAGE_ID}/transcribe", None),
-        ("GET", f"/blocks/{BLOCK_ID}", None),
-        ("PATCH", f"/blocks/{BLOCK_ID}", {"text": "fixed"}),
-        ("GET", f"/blocks/{BLOCK_ID}/image", None),
-        ("GET", "/search?q=lisbon", None),
-        ("GET", "/conversations", None),
-        ("POST", "/conversations", None),
-        ("GET", f"/conversations/{CONVERSATION_ID}", None),
-        ("PATCH", f"/conversations/{CONVERSATION_ID}", {"title": "Lisbon"}),
-        ("DELETE", f"/conversations/{CONVERSATION_ID}", None),
-        ("POST", f"/conversations/{CONVERSATION_ID}/messages", {"content": "hi"}),
-        ("GET", "/jobs", None),
-        ("GET", f"/jobs/{JOB_ID}", None),
-        ("GET", f"/jobs/{JOB_ID}/result", None),
-        ("POST", "/admin/reindex", None),
-    ],
-)
+# Every designed operation that still answers 501 (uploads are multipart, so they're tested below).
+STUB_CASES = [
+    ("GET", "/journals", None),
+    ("POST", "/journals", {"name": "Summer 2026"}),
+    ("GET", f"/journals/{JOURNAL_ID}", None),
+    ("PATCH", f"/journals/{JOURNAL_ID}", {"name": "Summer 2026 🌻"}),
+    ("DELETE", f"/journals/{JOURNAL_ID}", None),
+    ("POST", f"/journals/{JOURNAL_ID}/exports", {"format": "markdown"}),
+    ("GET", "/pages", None),
+    ("GET", f"/pages/{PAGE_ID}", None),
+    ("PATCH", f"/pages/{PAGE_ID}", {"entryDates": ["2026-07-14"]}),
+    ("DELETE", f"/pages/{PAGE_ID}", None),
+    ("GET", f"/pages/{PAGE_ID}/image", None),
+    ("PUT", f"/pages/{PAGE_ID}/blocks", {"blocks": []}),
+    ("POST", f"/pages/{PAGE_ID}/transcribe", None),
+    ("GET", f"/blocks/{BLOCK_ID}", None),
+    ("PATCH", f"/blocks/{BLOCK_ID}", {"text": "fixed"}),
+    ("GET", f"/blocks/{BLOCK_ID}/image", None),
+    ("GET", "/search?q=lisbon", None),
+    ("GET", "/conversations", None),
+    ("POST", "/conversations", None),
+    ("GET", f"/conversations/{CONVERSATION_ID}", None),
+    ("PATCH", f"/conversations/{CONVERSATION_ID}", {"title": "Lisbon"}),
+    ("DELETE", f"/conversations/{CONVERSATION_ID}", None),
+    ("POST", f"/conversations/{CONVERSATION_ID}/messages", {"content": "hi"}),
+    ("GET", "/jobs", None),
+    ("GET", f"/jobs/{JOB_ID}", None),
+    ("GET", f"/jobs/{JOB_ID}/result", None),
+    ("POST", "/admin/reindex", None),
+]
+
+
+@pytest.mark.parametrize(("method", "path", "body"), STUB_CASES)
 def test_stubs_answer_501_problem(
     client: TestClient, method: str, path: str, body: dict | None
 ) -> None:
@@ -87,9 +87,8 @@ def test_stubs_answer_501_problem(
 def test_every_operation_has_a_stub_test() -> None:
     spec = json.loads(render_openapi())
     operations = sum(len(methods) for methods in spec["paths"].values())
-    tested = len(test_stubs_answer_501_problem.pytestmark[0].args[1])
-    # Uploads (multipart) are covered separately below.
-    assert tested == operations - 1
+    # Uploads (multipart) are covered separately below, and /health is already built.
+    assert len(STUB_CASES) == operations - 2
 
 
 def test_upload_stub_answers_501(client: TestClient) -> None:
