@@ -55,7 +55,7 @@ and is automated with [release-please](https://github.com/googleapis/release-ple
    (`chore(main): release X.Y.Z`) with the version bump and `CHANGELOG.md`.
 2. Merging the release PR tags `vX.Y.Z`, creates the GitHub Release, publishes the Docker images to
    `ghcr.io/umute97/kritzellm-{api,web}` (amd64 + arm64, with provenance attestations) and attaches
-   `api/openapi.yaml` to the release.
+   `api/openapi.json` to the release.
 
 Release PRs are opened by `GITHUB_TOKEN`, which doesn't trigger CI. They only touch the changelog
 and version strings, so a maintainer merges them using the ruleset bypass.
@@ -89,6 +89,8 @@ within the same PR:
 4. **Dependabot** ecosystem in [`.github/dependabot.yml`](.github/dependabot.yml) (`uv`, `npm`, `docker`).
 5. **Version stamp** in [`release-please-config.json`](release-please-config.json) `extra-files`, e.g.
    `{ "type": "toml", "path": "backend/pyproject.toml", "jsonpath": "$.project.version" }`.
+   For YAML or anything where formatting matters, mark the version line with `# x-release-please-version`
+   and use `{ "type": "generic", "path": "..." }`, which only rewrites that line.
 6. **Image publishing**: if it ships a Dockerfile, make sure it's in the `publish-images` matrix in
    [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml).
 7. **CodeQL** language in [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml)

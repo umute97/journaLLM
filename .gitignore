@@ -227,3 +227,6 @@ __marimo__/
 *.HEIC
 .env.*
 !.env.example
+
+# Node
+node_modules/

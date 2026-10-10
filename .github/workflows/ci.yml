@@ -38,13 +38,13 @@ jobs:
               - 'api/**'
             backend:
               - 'backend/**'
-              - 'api/openapi.yaml'
+              - 'api/openapi.json'
             web:
               - 'web/**'
-              - 'api/openapi.yaml'
+              - 'api/openapi.json'
             cli:
               - 'cli/**'
-              - 'api/openapi.yaml'
+              - 'api/openapi.json'
             docker:
               - '**/Dockerfile'
               - '**/.dockerignore'
@@ -105,13 +105,93 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  # Component jobs (api-contract, backend, web, cli, docker-build) are added here as
+  api-contract:
+    name: API contract
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Install tools
+        run: npm ci
+      - name: Lint the spec
+        run: npm run lint
+
+  backend:
+    name: Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Test (incl. "is api/openapi.json up to date?")
+        run: uv run pytest
+
+  backend-next-python:
+    name: Backend (Python 3.15, allowed to fail)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: backend
+          python-version: "3.15"
+          enable-cache: false
+      - name: Install
+        run: uv sync --locked --python 3.15
+      - name: Test
+        run: uv run --python 3.15 pytest
+
+  # Component jobs (web, cli, docker-build) are added here as
   # each component lands. See "Adding a new component" in CONTRIBUTING.md.
 
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, repo-hygiene, compose]
+    needs: [changes, repo-hygiene, compose, api-contract, backend]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
