@@ -9,7 +9,7 @@
     "docs": "scalar document serve openapi.json --watch --port 4011"
   },
   "devDependencies": {
-    "@redocly/cli": "2.55.0",
+    "@redocly/cli": "2.57.0",
     "@scalar/cli": "2.10.0",
     "@stoplight/prism-cli": "5.16.0"
   },
