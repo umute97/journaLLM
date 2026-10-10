@@ -2766,13 +2766,13 @@
         "properties": {
           "start": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Start",
             "description": "First band the block touches."
           },
           "end": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "End",
             "description": "Last band the block touches (≥ `start`)."
           }
@@ -2790,19 +2790,19 @@
         "properties": {
           "start": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Start",
             "description": "First band the block touches."
           },
           "end": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "End",
             "description": "Last band the block touches (≥ `start`)."
           },
           "total": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Total",
             "description": "How many bands the page was split into."
           }
@@ -2832,7 +2832,7 @@
           },
           "seq": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Seq",
             "description": "Position in reading order, starting at 0."
           },
@@ -3035,29 +3035,29 @@
         "properties": {
           "x": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "X",
             "description": "Left edge."
           },
           "y": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Y",
             "description": "Top edge."
           },
           "width": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Width",
             "description": "Width."
           },
           "height": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Height",
             "description": "Height."
           }
@@ -3160,7 +3160,7 @@
           },
           "messageCount": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Messagecount",
             "description": "Number of messages in the thread."
           },
@@ -3233,7 +3233,7 @@
           },
           "messageCount": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Messagecount",
             "description": "Number of messages in the thread."
           },
@@ -3564,13 +3564,13 @@
         "properties": {
           "done": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Done",
             "description": "Units finished so far."
           },
           "total": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Total",
             "description": "Total units of work."
           }
@@ -3660,7 +3660,7 @@
           },
           "pageCount": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Pagecount",
             "description": "Number of pages in the journal."
           },
@@ -3954,7 +3954,7 @@
           },
           "pageNumber": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Pagenumber",
             "description": "Position of the page in its journal."
           },
@@ -4056,7 +4056,7 @@
           },
           "pageNumber": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Pagenumber",
             "description": "Position of the page in its journal."
           },
@@ -4155,13 +4155,13 @@
         "properties": {
           "width": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Width",
             "description": "Width of the normalized image in pixels."
           },
           "height": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Height",
             "description": "Height of the normalized image in pixels."
           },
@@ -4268,7 +4268,7 @@
           },
           "pageNumber": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Pagenumber",
             "description": "Position of the page in its journal."
           },
@@ -4333,7 +4333,7 @@
             "anyOf": [
               {
                 "type": "integer",
-                "minimum": 1.0
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -4393,7 +4393,7 @@
             "anyOf": [
               {
                 "type": "integer",
-                "minimum": 1.0
+                "minimum": 1
               },
               {
                 "type": "null"
@@ -4424,8 +4424,8 @@
           },
           "status": {
             "type": "integer",
-            "maximum": 599.0,
-            "minimum": 400.0,
+            "maximum": 599,
+            "minimum": 400,
             "title": "Status",
             "description": "The HTTP status code."
           },
@@ -4611,7 +4611,7 @@
         "properties": {
           "ref": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Ref",
             "description": "The `n` in the `[n]` marker in the message text."
           },
